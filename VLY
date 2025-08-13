@@ -1,42 +1,244 @@
-#include <chainparams.h>
-#include <uint256.h>
 
-class CMainParams : public CChainParams {
-public:
-    CMainParams() {
-        strNetworkID = "main";
-        consensus.nSubsidyHalvingInterval = 210000; // Халвінг кожні 210,000 блоків
-        consensus.BIP16Height = 0; // Активувати BIP16 одразу
-        consensus.BIP34Height = 0;
-        consensus.BIP65Height = 0;
-        consensus.BIP66Height = 0;
-        consensus.powLimit = uint256S("00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
-        consensus.nPowTargetTimespan = 14 * 24 * 60 * 60; // 2 тижні
-        consensus.nPowTargetSpacing = 10 * 60; // 10 хвилин
-        consensus.fPowAllowMinDifficultyBlocks = false;
-        consensus.fPowNoRetargeting = false;
-        consensus.nRuleChangeActivationThreshold = 1916; // 95% з 2016 блоків
-        consensus.nMinerConfirmationWindow = 2016; // Вікно для складності
-        consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].bit = 28;
-        consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].nStartTime = 0;
-        consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].nTimeout = 0;
+version: "3.9"
 
-        pchMessageStart[0] = 0x56; // VLY унікальні байти
-        pchMessageStart[1] = 0x4c;
-        pchMessageStart[2] = 0x59;
-        pchMessageStart[3] = 0x01;
-        nDefaultPort = 18444;
-        nPruneAfterHeight = 100000;
-        genesis = CreateGenesisBlock(1691936160, 123456, 0x1d00ffff, 1, 50 * COIN); // Дата: 13.08.2025
-        consensus.hashGenesisBlock = genesis.GetHash();
-        assert(consensus.hashGenesisBlock == uint256S("0x...")); // Перегенеруй вручну
-        assert(genesis.hashMerkleRoot == uint256S("0x...")); // Перегенеруй вручну
+# =========================
+# ОПЦІЇ ЗА ЗАМОВЧУВАННЯМ
+# =========================
+x-common-env: &common-env
+  CHAIN: regtest             # regtest|signet|testnet|mainnet (для прикладу — regtest)
+  RPC_USER: vlyrpc           # логін RPC для всіх вузлів
+  RPC_PASSWORD: vlypass      # пароль RPC для всіх вузлів
+  WALLET: vlywallet          # ім’я гаманця, що буде створено
+  PRINT_GENESIS: "1"         # логувати (і записувати) genesis/merkle
 
-        vSeeds.clear(); // Додай власні сид-ноди пізніше
-        base58Prefixes[PUBKEY_ADDRESS] = std::vector<unsigned char>(1, 0); // Адреси як у BTC
-        base58Prefixes[SCRIPT_ADDRESS] = std::vector<unsigned char>(1, 5);
-        bech32_hrp = "vly";
-    }
-};
+networks:
+  vlynet: {}
 
-static CMainParams mainParams;
+volumes:
+  seed-data:
+  node1-data:
+  node2-data:
+  genesis-share:
+  nginx-ssl:
+
+services:
+
+  # =========================
+  # 1) Seed-вузол
+  # =========================
+  vly-seed:
+    image: ruimarinho/bitcoin-core:26.0
+    container_name: vly-seed
+    hostname: vly-seed
+    restart: unless-stopped
+    command: >
+      bitcoind
+      -chain=${CHAIN}
+      -server=1
+      -txindex=1
+      -listen=1
+      -rpcbind=0.0.0.0
+      -rpcallowip=0.0.0.0/0
+      -rpcuser=${RPC_USER}
+      -rpcpassword=${RPC_PASSWORD}
+      -deprecatedrpc=addresses
+      -addresstype=legacy
+      -fallbackfee=0.0001
+      -dnsseed=0
+      -printtoconsole=1
+    environment:
+      <<: *common-env
+    ports:
+      - "18444:18444"    # P2P (regtest)
+      - "18443:18443"    # RPC (regtest)
+    volumes:
+      - seed-data:/home/bitcoin/.bitcoin
+      - genesis-share:/genesis
+    networks: [vlynet]
+
+  # =========================
+  # 2) Другий вузол
+  # =========================
+  vly-node1:
+    image: ruimarinho/bitcoin-core:26.0
+    container_name: vly-node1
+    hostname: vly-node1
+    restart: unless-stopped
+    depends_on: [vly-seed]
+    command: >
+      sh -c "
+        bitcoind
+          -chain=${CHAIN}
+          -server=1
+          -txindex=1
+          -listen=1
+          -rpcbind=0.0.0.0
+          -rpcallowip=0.0.0.0/0
+          -rpcuser=${RPC_USER}
+          -rpcpassword=${RPC_PASSWORD}
+          -deprecatedrpc=addresses
+          -addresstype=legacy
+          -fallbackfee=0.0001
+          -addnode=vly-seed
+          -printtoconsole=1
+      "
+    environment:
+      <<: *common-env
+    volumes:
+      - node1-data:/home/bitcoin/.bitcoin
+      - genesis-share:/genesis
+    networks: [vlynet]
+
+  # =========================
+  # 3) Третій вузол
+  # =========================
+  vly-node2:
+    image: ruimarinho/bitcoin-core:26.0
+    container_name: vly-node2
+    hostname: vly-node2
+    restart: unless-stopped
+    depends_on: [vly-seed]
+    command: >
+      sh -c "
+        bitcoind
+          -chain=${CHAIN}
+          -server=1
+          -txindex=1
+          -listen=1
+          -rpcbind=0.0.0.0
+          -rpcallowip=0.0.0.0/0
+          -rpcuser=${RPC_USER}
+          -rpcpassword=${RPC_PASSWORD}
+          -deprecatedrpc=addresses
+          -addresstype=legacy
+          -fallbackfee=0.0001
+          -addnode=vly-seed
+          -printtoconsole=1
+      "
+    environment:
+      <<: *common-env
+    volumes:
+      - node2-data:/home/bitcoin/.bitcoin
+      - genesis-share:/genesis
+    networks: [vlynet]
+
+  # =========================================
+  # 4) Автозбір genesis hash + merkle root
+  # =========================================
+  genesis-probe:
+    image: alpine:3.20
+    container_name: vly-genesis-probe
+    restart: "on-failure"
+    depends_on: [vly-seed]
+    environment:
+      <<: *common-env
+    command: >
+      sh -c '
+        apk add --no-cache curl jq >/dev/null;
+        echo "Waiting RPC of seed...";
+        for i in $(seq 1 60); do
+          if curl -s --user ${RPC_USER}:${RPC_PASSWORD} \
+            --data-binary "{\"jsonrpc\":\"1.0\",\"id\":\"ping\",\"method\":\"getblockcount\",\"params\":[]}" \
+            -H "content-type: text/plain;" http://vly-seed:18443/ >/dev/null 2>&1; then break; fi;
+          sleep 2;
+        done;
+        GENESIS=$(curl -s --user ${RPC_USER}:${RPC_PASSWORD} \
+          --data-binary "{\"jsonrpc\":\"1.0\",\"id\":\"g0\",\"method\":\"getblockhash\",\"params\":[0]}" \
+          -H "content-type: text/plain;" http://vly-seed:18443/ | jq -r .result);
+        BLOCK0=$(curl -s --user ${RPC_USER}:${RPC_PASSWORD} \
+          --data-binary "{\"jsonrpc\":\"1.0\",\"id\":\"gb\",\"method\":\"getblock\",\"params\":[\"$GENESIS\"]}" \
+          -H "content-type: text/plain;" http://vly-seed:18443/);
+        MERKLE=$(echo "$BLOCK0" | jq -r .result.merkleroot);
+        mkdir -p /genesis;
+        echo GENESIS_HASH=$GENESIS > /genesis/genesis.env;
+        echo MERKLE_ROOT=$MERKLE >> /genesis/genesis.env;
+        echo CHAIN=${CHAIN} >> /genesis/genesis.env;
+        echo \"Saved /genesis/genesis.env\";
+        echo \"GENESIS: $GENESIS\";
+        echo \"MERKLE : $MERKLE\";
+        # не завершуйся миттєво, щоб том лишався примонтованим
+        sleep 3600
+      '
+    volumes:
+      - genesis-share:/genesis
+    networks: [vlynet]
+
+  # =========================
+  # 5) btc-rpc-explorer
+  # =========================
+  explorer:
+    image: janoside/btc-rpc-explorer:latest
+    container_name: vly-explorer
+    restart: unless-stopped
+    depends_on: [vly-seed]
+    environment:
+      BTCEXP_HOST: "0.0.0.0"
+      BTCEXP_PORT: "3002"
+      BTCEXP_BITCOIND_HOST: "vly-seed"
+      BTCEXP_BITCOIND_PORT: "18443"
+      BTCEXP_BITCOIND_USER: "${RPC_USER}"
+      BTCEXP_BITCOIND_PASS: "${RPC_PASSWORD}"
+      BTCEXP_BITCOIND_NETWORK: "regtest"
+      BTCEXP_NO_RATELIMIT: "true"
+      BTCEXP_BASIC_AUTH_PASSWORD: ""   # вимкнено (буде BasicAuth на nginx)
+      BTCEXP_SLOW_DEVICE_MODE: "true"
+      # Якщо explorer не бачить блоків на regtest — створи 1 блок:
+      # bitcoin-cli -regtest -rpcuser=... -rpcpassword=... -generate 1
+    networks: [vlynet]
+
+  # =========================
+  # 6) nginx TLS + BasicAuth
+  #   (порт 8443 на хості)
+  # =========================
+  nginx:
+    image: nginx:alpine
+    container_name: vly-nginx
+    depends_on: [explorer]
+    restart: unless-stopped
+    environment:
+      BASIC_USER: "volya"
+      BASIC_PASS: "changeme"       # ЗМІНИ НЕГАЙНО
+      SSL_CN: "volya.local"        # CN для self-signed
+    volumes:
+      - nginx-ssl:/etc/nginx/ssl
+    ports:
+      - "8443:443"
+    command: >
+      sh -c '
+        apk add --no-cache openssl apache2-utils >/dev/null;
+        mkdir -p /etc/nginx/ssl;
+        [ -f /etc/nginx/ssl/server.crt ] || openssl req -x509 -nodes -newkey rsa:2048
+          -keyout /etc/nginx/ssl/server.key -out /etc/nginx/ssl/server.crt -subj "/CN=${SSL_CN}" -days 3650;
+        htpasswd -bc /etc/nginx/htpasswd ${BASIC_USER} ${BASIC_PASS};
+        cat >/etc/nginx/nginx.conf <<NG
+        user  nginx;
+        worker_processes  auto;
+        events { worker_connections  1024; }
+        http {
+          include       /etc/nginx/mime.types;
+          default_type  application/octet-stream;
+          sendfile        on;
+          keepalive_timeout  65;
+
+          server {
+            listen 443 ssl;
+            server_name ${SSL_CN};
+            ssl_certificate      /etc/nginx/ssl/server.crt;
+            ssl_certificate_key  /etc/nginx/ssl/server.key;
+
+            auth_basic           "Restricted";
+            auth_basic_user_file /etc/nginx/htpasswd;
+
+            location / {
+              proxy_set_header Host \$host;
+              proxy_set_header X-Real-IP \$remote_addr;
+              proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+              proxy_set_header X-Forwarded-Proto https;
+              proxy_pass http://explorer:3002/;
+            }
+          }
+        }
+NG
+        nginx -g "daemon off;"
+      '
+    networks: [vlynet]
