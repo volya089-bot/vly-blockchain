@@ -1,0 +1,54 @@
+*** a/src/chainparams.cpp
+--- b/src/chainparams.cpp
+***************
+*** 50,61 ****
+--- 50,93 ----
+  class CMainParams : public CChainParams {
+  public:
+      CMainParams() {
+          strNetworkID = CBaseChainParams::MAIN;
++         // === VLY customizations ===
++         consensus.nSubsidyHalvingInterval = 210000;
++         consensus.nPowTargetSpacing = 10 * 60; // 10 minutes
++         nDefaultPort = 18771;
++         m_bech32_hrp = "vly";
++ 
++         // Unique message start (magic)
++         pchMessageStart[0] = 0xf8;
++         pchMessageStart[1] = 0xc3;
++         pchMessageStart[2] = 0xb1;
++         pchMessageStart[3] = 0xda;
++ 
++         // Genesis placeholder
++         uint32_t nTime = 1754956800; // 2025-08-12 00:00:00 UTC
++         uint32_t nNonce = 0;
++         uint32_t nBits = 0x1d00ffff;
++         int32_t nVersion = 1;
++         const char* pszTimestamp = "Volya launches freedom money — 2025-08-12";
++         genesis = CreateGenesisBlock(pszTimestamp, std::vector<unsigned char>{}, nTime, nNonce, nBits, nVersion, 0);
++         consensus.hashGenesisBlock = genesis.GetHash();
++         // TODO: set final genesis hash & merkle
+  
+          vSeeds.clear();
+          vFixedSeeds.clear();
+  
+          base58Prefixes[PUBKEY_ADDRESS] = std::vector<unsigned char>(1,0);
+          base58Prefixes[SCRIPT_ADDRESS] = std::vector<unsigned char>(1,5);
+          base58Prefixes[SECRET_KEY] =     std::vector<unsigned char>(1,128);
+  
++         bech32_hrp = "vly";
++ 
+          fDefaultConsistencyChecks = false;
+          fRequireStandard = true;
+          m_is_test_chain = false;
+          m_is_mockable_chain = false;
+      }
+  };
+*** a/src/consensus/params.h
+--- b/src/consensus/params.h
+***************
+*** 26,31 ****
+--- 26,33 ----
+      int nSubsidyHalvingInterval;
++     // VLY
++     int64_t nPowTargetSpacing;
