@@ -1,0 +1,103 @@
+version: '3.8'
+
+services:
+  # VLY Core Node
+  vly-node:
+    image: ruimarinho/bitcoin-core:26.0
+    container_name: vly-node
+    restart: unless-stopped
+    ports:
+      - "18443:18443"  # RPC
+      - "18444:18444"  # P2P
+    volumes:
+      - vly-data:/home/bitcoin/.bitcoin
+      - ./vlycoin.conf.example:/home/bitcoin/.bitcoin/bitcoin.conf
+    environment:
+      - BITCOIN_DATA=/home/bitcoin/.bitcoin
+    command: >
+      bitcoind
+      -regtest
+      -server=1
+      -rpcbind=0.0.0.0
+      -rpcallowip=0.0.0.0/0
+      -rpcuser=vlyrpc
+      -rpcpassword=vlypass
+
+  # Faucet Service
+  faucet:
+    build: ./faucet
+    container_name: vly-faucet
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      - VLY_RPC_HOST=vly-node
+      - VLY_RPC_PORT=18443
+      - VLY_RPC_USER=vlyrpc
+      - VLY_RPC_PASSWORD=vlypass
+      - VLY_NETWORK=regtest
+    depends_on:
+      - vly-node
+    volumes:
+      - ./faucet:/app
+      - /app/node_modules
+
+  # Explorer Backend
+  explorer-api:
+    build: ./explorer/backend
+    container_name: vly-explorer-api
+    restart: unless-stopped
+    ports:
+      - "3002:3002"
+    environment:
+      - VLY_RPC_HOST=vly-node
+      - VLY_RPC_PORT=18443
+      - VLY_RPC_USER=vlyrpc
+      - VLY_RPC_PASSWORD=vlypass
+      - VLY_NETWORK=regtest
+    depends_on:
+      - vly-node
+    volumes:
+      - ./explorer/backend:/app
+      - /app/node_modules
+
+  # Explorer Frontend
+  explorer-frontend:
+    build: ./explorer/frontend
+    container_name: vly-explorer-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - REACT_APP_API_URL=http://localhost:3002/api
+    depends_on:
+      - explorer-api
+    volumes:
+      - ./explorer/frontend:/app
+      - /app/node_modules
+
+  # Merchant API
+  merchant-api:
+    build: ./merchant
+    container_name: vly-merchant-api
+    restart: unless-stopped
+    ports:
+      - "3003:3003"
+    environment:
+      - VLY_RPC_HOST=vly-node
+      - VLY_RPC_PORT=18443
+      - VLY_RPC_USER=vlyrpc
+      - VLY_RPC_PASSWORD=vlypass
+      - VLY_NETWORK=regtest
+    depends_on:
+      - vly-node
+    volumes:
+      - ./merchant:/app
+      - /app/node_modules
+
+volumes:
+  vly-data:
+
+networks:
+  default:
+    name: vly-network

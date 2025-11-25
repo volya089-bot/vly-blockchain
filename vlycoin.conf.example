@@ -1,0 +1,10 @@
+server=1
+daemon=1
+txindex=1
+rpcuser=vlyrpc
+rpcpassword=change_me_long_random
+port=18771
+rpcport=18772
+listenonion=0
+addnode=<seed_1_ip>
+addnode=<seed_2_ip>
