@@ -1,0 +1,53 @@
+name: build
+on:
+  push: { branches: ["main"] }
+  pull_request:
+jobs:
+  linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deps
+        run: |
+          sudo apt update
+          sudo apt install -y build-essential autotools-dev automake libtool pkg-config             libboost-all-dev libevent-dev libminiupnpc-dev libzmq3-dev libssl-dev             qtbase5-dev qttools5-dev qttools5-dev-tools
+      - name: Build (CLI)
+        run: |
+          ./autogen.sh
+          ./configure --without-gui
+          make -j$(nproc)
+      - name: Build (GUI)
+        run: |
+          make clean
+          ./configure --with-gui=qt
+          make -j$(nproc)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vly-linux
+          path: |
+            src/bitcoind
+            src/qt/bitcoin-qt
+  windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: MSYS2 toolchain
+        uses: msys2/setup-msys2@v2
+        with:
+          update: true
+          install: >
+            base-devel mingw-w64-x86_64-toolchain
+            mingw-w64-x86_64-qt5 mingw-w64-x86_64-boost
+            mingw-w64-x86_64-openssl mingw-w64-x86_64-libevent
+      - name: Build
+        shell: msys2 {0}
+        run: |
+          autoreconf -fi
+          ./configure --host=x86_64-w64-mingw32
+          make -j$(nproc)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vly-windows
+          path: |
+            src/bitcoind.exe
+            src/qt/bitcoin-qt.exe
