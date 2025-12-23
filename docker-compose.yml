@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  vly-blockchain:
+    build: .
+    container_name: vly-blockchain
+    ports:
+      - "8545:8545"  # RPC
+      - "8546:8546"  # WebSocket
+      - "30303:30303"  # P2P
+    volumes:
+      - blockchain_data:/home/ethereum/.ethereum
+    environment:
+      - NETWORK_ID=3001
+    restart: unless-stopped
+
+  merchant-api:
+    build:
+      context: ./merchant-api
+      dockerfile: Dockerfile
+    container_name: wly-merchant-api
+    ports:
+      - "3000:3000"
+    environment:
+      - WLY_RPC_URL=http://vly-blockchain:8545
+      - PRIVATE_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
+      - PORT=3000
+    depends_on:
+      - vly-blockchain
+    restart: unless-stopped
+
+volumes:
+  blockchain_data:
